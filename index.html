@@ -66,6 +66,7 @@
     .topbar {
       position: sticky; top: 0; z-index: 100;
       background: rgba(255,255,255,0.88);
+      -webkit-backdrop-filter: saturate(180%) blur(20px);
       backdrop-filter: saturate(180%) blur(20px);
       border-bottom: 1px solid var(--border-s);
       padding: 12px 20px;
@@ -133,13 +134,21 @@
 
     .cal-grid { display: grid; grid-template-columns: repeat(7,1fr); gap: 4px; }
     .cal-cell {
-      aspect-ratio: 1; display: flex; flex-direction: column;
+      aspect-ratio: 1;
+      display: flex; flex-direction: column;
       align-items: center; justify-content: center;
       border-radius: 10px; font-size: 14px; font-weight: 500;
       cursor: pointer; transition: all 0.15s;
       position: relative; color: var(--text);
       border: 1.5px solid transparent;
       -webkit-tap-highlight-color: transparent;
+      /* Safari fallback for aspect-ratio */
+      min-height: 40px;
+    }
+    /* Ensure square cells on older Safari */
+    @supports not (aspect-ratio: 1) {
+      .cal-cell { padding-bottom: 100%; height: 0; min-height: 0; }
+      .cal-grid { grid-auto-rows: 1fr; }
     }
     .cal-cell.empty { cursor: default; }
     .cal-cell:not(.empty):not(.session):hover { background: #f5f5f7; }
@@ -212,8 +221,10 @@
 
     /* ── SESSION POPUP ── */
     .sess-overlay {
-      display: none; position: fixed; inset: 0;
-      background: rgba(0,0,0,0.3); backdrop-filter: blur(4px);
+      display: none; position: fixed; top: 0; right: 0; bottom: 0; left: 0;
+      background: rgba(0,0,0,0.3);
+      -webkit-backdrop-filter: blur(4px);
+      backdrop-filter: blur(4px);
       z-index: 200; align-items: flex-end; justify-content: center;
     }
     .sess-overlay.open { display: flex; }
@@ -276,7 +287,7 @@
       </div>
       <div class="lfield">
         <label>전화번호</label>
-        <input type="tel" id="inp-phone" placeholder="숫자만 입력 (예: 01012345678)" autocomplete="tel">
+        <input type="tel" id="inp-phone" placeholder="01012345678 (숫자 11자리)" autocomplete="tel">
       </div>
       <div class="login-err" id="loginErr">이름 또는 전화번호가 일치하지 않아요.</div>
       <button class="btn-login" onclick="doLogin()">로그인</button>
@@ -457,13 +468,8 @@ function fmtDate(y, m, d) {
   return y + '-' + String(m+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
 }
 
-// ── TOKEN ───────────────────────────────────────────────────────
-function parseToken(t) {
-  try { return JSON.parse(decodeURIComponent(escape(atob(t)))); } catch { return null; }
-}
-
 // ── STORAGE ─────────────────────────────────────────────────────
-function storKey() { return 'hb2_' + member.id; }
+function storKey() { return 'hb2_' + member.phone; }
 function loadData() {
   try {
     const d = JSON.parse(localStorage.getItem(storKey()) || '{}');
@@ -482,15 +488,18 @@ function doLogin() {
   const err   = document.getElementById('loginErr');
   err.style.display = 'none';
   if (!member) { err.textContent = '올바른 링크로 접속해주세요.'; err.style.display='block'; return; }
-  const ok = name === member.n && (phone.slice(-4) === member.p || phone.endsWith(member.p));
-  if (!ok) { err.style.display = 'block'; return; }
-  sessionStorage.setItem('hb2_login', member.id);
+  if (phone !== member.phone) { err.style.display = 'block'; return; }
+  // 이름 저장 (표시용)
+  member.n = name || '회원';
+  localStorage.setItem('hb2_name_' + member.phone, member.n);
+  sessionStorage.setItem('hb2_login', member.phone);
   applyPendingFb();
   showDashboard();
 }
 
 function doLogout() {
   sessionStorage.removeItem('hb2_login');
+  member.n = null;
   document.getElementById('dashboard').style.display = 'none';
   document.getElementById('loginScreen').style.display = 'flex';
 }
@@ -758,10 +767,16 @@ function toast(msg) {
 // ── INIT ─────────────────────────────────────────────────────────
 (function init() {
   const params = new URLSearchParams(window.location.search);
-  const t  = params.get('t');
+  const p  = params.get('p');   // 전화번호 11자리
+  const l  = params.get('l');   // 레벨
   const fb = params.get('fb');
 
-  member = t ? parseToken(t) : null;
+  if (p && l) {
+    const savedName = localStorage.getItem('hb2_name_' + p);
+    member = { phone: p, l: parseInt(l), n: savedName || null };
+  } else {
+    member = null;
+  }
 
   if (member && member.n) {
     document.getElementById('loginGreeting').textContent = '안녕하세요, ' + member.n + '님!';
@@ -776,11 +791,13 @@ function toast(msg) {
     return;
   }
 
-  if (fb) pendingFb = parseToken(fb);
+  if (fb) {
+    try { pendingFb = JSON.parse(atob(fb)); } catch { pendingFb = null; }
+  }
 
   loadData();
 
-  if (sessionStorage.getItem('hb2_login') === member.id) {
+  if (sessionStorage.getItem('hb2_login') === member.phone) {
     applyPendingFb();
     showDashboard();
   }
