@@ -493,21 +493,45 @@ function doLogin() {
   const phone = document.getElementById('inp-phone').value.replace(/\D/g,'');
   const err   = document.getElementById('loginErr');
   err.style.display = 'none';
-  if (!member) { err.textContent = '올바른 링크로 접속해주세요.'; err.style.display='block'; return; }
-  if (phone !== member.phone) { err.style.display = 'block'; return; }
-  // 이름 저장 (표시용)
-  member.n = name || '회원';
-  localStorage.setItem('hb2_name_' + member.phone, member.n);
-  sessionStorage.setItem('hb2_login', member.phone);
-  applyPendingFb();
-  showDashboard();
+
+  if (member) {
+    // 강사 링크로 접속한 경우 — 전화번호 일치 확인
+    if (phone !== member.phone) {
+      err.textContent = '전화번호가 일치하지 않아요.';
+      err.style.display = 'block';
+      return;
+    }
+    member.n = name || '회원';
+    localStorage.setItem('hb2_name_'  + member.phone, member.n);
+    localStorage.setItem('hb2_level_' + member.phone, member.l);  // 레벨 저장
+    sessionStorage.setItem('hb2_login', member.phone);
+    applyPendingFb();
+    showDashboard();
+  } else {
+    // 앱 직접 실행 — localStorage에 저장된 데이터로 확인
+    if (phone.length < 10) {
+      err.textContent = '전화번호를 정확히 입력해주세요.';
+      err.style.display = 'block';
+      return;
+    }
+    const savedLevel = localStorage.getItem('hb2_level_' + phone);
+    if (!savedLevel) {
+      err.textContent = '등록된 정보가 없어요. 강사님이 보내준 링크로 먼저 접속해주세요.';
+      err.style.display = 'block';
+      return;
+    }
+    const savedName = localStorage.getItem('hb2_name_' + phone);
+    member = { phone, l: parseInt(savedLevel), n: name || savedName || '회원' };
+    localStorage.setItem('hb2_name_' + phone, member.n);
+    sessionStorage.setItem('hb2_login', phone);
+    loadData();
+    showDashboard();
+  }
 }
 
 function doLogout() {
   sessionStorage.removeItem('hb2_login');
-  member.n = null;
-  document.getElementById('dashboard').style.display = 'none';
-  document.getElementById('loginScreen').style.display = 'flex';
+  location.reload();
 }
 
 document.getElementById('inp-phone').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
@@ -781,31 +805,26 @@ function toast(msg) {
     const savedName = localStorage.getItem('hb2_name_' + p);
     member = { phone: p, l: parseInt(l), n: savedName || null };
   } else {
+    // 앱 직접 실행 — 전화번호 입력 로그인 허용
     member = null;
+    document.querySelector('.login-hint').textContent =
+      '앱을 처음 사용하신다면 강사님이 보내준 링크로 먼저 접속해주세요.';
   }
 
   if (member && member.n) {
     document.getElementById('loginGreeting').textContent = '안녕하세요, ' + member.n + '님!';
   }
 
-  if (!member) {
-    document.getElementById('loginGreeting').textContent = '링크를 확인해주세요';
-    document.querySelector('.login-sub').textContent = '강사님이 보내준 링크로 접속해야 해요.';
-    ['inp-name','inp-phone'].forEach(id => document.getElementById(id).disabled = true);
-    const btn = document.querySelector('.btn-login');
-    btn.disabled = true; btn.style.opacity = '0.4';
-    return;
-  }
-
   if (fb) {
     try { pendingFb = JSON.parse(atob(fb)); } catch { pendingFb = null; }
   }
 
-  loadData();
-
-  if (sessionStorage.getItem('hb2_login') === member.phone) {
-    applyPendingFb();
-    showDashboard();
+  if (member) {
+    loadData();
+    if (sessionStorage.getItem('hb2_login') === member.phone) {
+      applyPendingFb();
+      showDashboard();
+    }
   }
 })();
 </script>
